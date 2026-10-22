@@ -18,11 +18,18 @@ declare module '../contract/chat-nodes.ts' {
 
 const MAX_DEPTH = 256
 
-interface ToolState {
+/**
+ * Internal fold state of one Tool Context. Exported for the dispatch perf
+ * spec's direct-drive harness only; production code reaches it through
+ * {@link toolDefinition}.
+ */
+export interface ToolState {
   /** Absent until a named delta or `tool/call` identifies the call. */
   readonly root: ToolCallBlock | undefined
-  readonly children: ReadonlyMap<string, readonly ToolCallBlock[]>
-  readonly parents: ReadonlyMap<string, string>
+  /** Owned by this state chain; dispatch updates mutate them in place. */
+  readonly children: Map<string, ToolCallBlock[]>
+  /** Owned by this state chain; dispatch updates mutate them in place. */
+  readonly parents: Map<string, string>
 }
 
 interface ProjectedBlockCache {
@@ -201,26 +208,27 @@ function updateDispatch(state: ToolState, match: ConversationMatch): ToolState {
   const data = event.data
   const parentCallId = String(data.parentCallId)
   const subCallId = String(data.subCallId)
-  const siblings = state.children.get(parentCallId) ?? []
-  const index = siblings.findIndex(candidate => candidate.callId === subCallId)
+  const siblings = state.children.get(parentCallId)
+  const index = siblings?.findIndex(candidate => candidate.callId === subCallId) ?? -1
   if (event.type === 'tool/ptc-dispatch-start') {
     if (index >= 0 || !acceptsEdge(state, parentCallId, subCallId)) return state
-    const children = new Map(state.children)
-    children.set(parentCallId, [...siblings, childCall(match, data)])
-    const parents = new Map(state.parents)
-    parents.set(subCallId, parentCallId)
-    return { ...state, children, parents }
+    const pending = childCall(match, data)
+    if (siblings === undefined) state.children.set(parentCallId, [pending])
+    else siblings.push(pending)
+    state.parents.set(subCallId, parentCallId)
+    return state
   }
   if (index < 0 && !acceptsEdge(state, parentCallId, subCallId)) return state
-  const previous = index < 0 ? undefined : siblings[index]
+  const previous = index < 0 ? undefined : siblings?.[index]
   const settled = childResult(match, data, previous)
-  const children = new Map(state.children)
-  children.set(parentCallId, index < 0
-    ? [...siblings, settled]
-    : siblings.map((child, at) => at === index ? settled : child))
-  const parents = new Map(state.parents)
-  if (index < 0) parents.set(subCallId, parentCallId)
-  return { ...state, children, parents }
+  if (index < 0) {
+    if (siblings === undefined) state.children.set(parentCallId, [settled])
+    else siblings.push(settled)
+    state.parents.set(subCallId, parentCallId)
+  } else if (siblings !== undefined) {
+    siblings[index] = settled
+  }
+  return state
 }
 
 function projectBlock(

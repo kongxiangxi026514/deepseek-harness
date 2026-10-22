@@ -83,10 +83,23 @@
   --dsh-chat-flow-gap: 12px;
 }
 
-/* Settled-flow identity boundary. It is neutral until it becomes the natural
-   measurement/mount unit for a virtualizer without changing the column gap. */
+/* Settled-flow identity boundary. It is the natural measurement/mount unit
+   for a virtualizer without changing the column gap. */
 .flowItem {
   min-width: 0;
+}
+
+/* Off-screen rows skip layout/paint of their contents; the remembered size
+   (contain-intrinsic-size: auto) keeps the scroll range and fold geometry
+   stable. The 96px fallback only covers rows that were never rendered (a
+   session restored straight to the tail), where it errs small so tail
+   landings and the fold driver's initial estimate stay close to reality.
+   Empty seats keep their zero height and rows under fold motion stay live:
+   both are excluded so the :has() seat rules and the fold driver's
+   offsetHeight measurements keep seeing real geometry. */
+.flowItem:not(:empty, :has(> [data-slot="conversation.chat.node"]:empty)):not([data-chat-motion]) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
 }
 
 /* Bottom room: sized by the viewport owner while rows above the reader close,

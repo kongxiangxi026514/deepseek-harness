@@ -219,7 +219,11 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   }
   const activateView = (sessionId: SessionId, preferred: string | null): void => {
     const active = resolveActiveView(viewTabs(), preferred)
-    if (active !== undefined) uiConversation.binding(sessionId).activate(active.id)
+    // A released session can still sit in the tracked set until its effect cleanup flushes;
+    // refreshViews re-resolves tabs for live bindings only, so a dead one is skipped here.
+    if (active !== undefined && sessions.binding(sessionId) !== undefined) {
+      uiConversation.binding(sessionId).activate(active.id)
+    }
   }
   const restoreView = (sessionId: SessionId): void => {
     activateView(sessionId, readConversationViewPreference(sessionId))
